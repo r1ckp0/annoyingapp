@@ -28,6 +28,8 @@ class AppMonitorService : Service() {
     private lateinit var handler: Handler
     private lateinit var runnable: Runnable
 
+    private val ACTION_STOP_SERVICE = "com.yourapp.action.STOP_SERVICE" // Define u
+
     // Lista de paquetes de redes sociales (ejemplos, debes completarla)
     private val socialMediaPackages = listOf(
         "com.facebook.katana", // Facebook
@@ -35,7 +37,8 @@ class AppMonitorService : Service() {
         "com.twitter.android", // Twitter / X
         "com.whatsapp", // WhatsApp
         "com.zhiliaoapp.musically", // TikTok
-        "com.ss.android.ugc.trill"  // TikTok (otra variante)
+        "com.ss.android.ugc.trill",  // TikTok (otra variante)
+        "com.google.android.youtube"
         // Agrega más según necesites
     )
 
@@ -46,7 +49,19 @@ class AppMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notificationIntent = Intent(this, MainActivity::class.java) // Actividad a abrir al tocar la notificación
+        // Primero, verificar si el intent tiene nuestra acción para detener el servicio
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            Log.d(TAG, "Acción de detener servicio recibida.")
+            stopSelf() // Detiene el servicio
+            return START_NOT_STICKY // Opcional: no reiniciar si se detiene explícitamente
+        }
+
+        createNotificationChannel() // Asegúrate de que el canal esté creado
+
+        // Intent para cuando se toque la notificación (puede abrir MainActivity o nada)
+        // Si no quieres que haga nada al tocar el cuerpo de la notificación, puedes
+        // crear un PendingIntent vacío o que no haga nada.
+        val notificationIntent = Intent(this, MainActivity::class.java) // Opcional
         val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
@@ -54,24 +69,44 @@ class AppMonitorService : Service() {
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingIntentFlags)
 
+        // Intent para la acción de "Detener"
+        val stopServiceIntent = Intent(this, AppMonitorService::class.java).apply {
+            action = ACTION_STOP_SERVICE
+        }
+        val stopServicePendingIntent = PendingIntent.getService(
+            this,
+            1, // Request code diferente al del content intent
+            stopServiceIntent,
+            pendingIntentFlags // Reusamos los mismos flags
+        )
+
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("App Monitor Activo")
-            .setContentText("Monitoreando el uso de aplicaciones.")
+            .setContentTitle("Monitor de 'Disturbios' Activo")
+            .setContentText("Vigilando aplicaciones para tu proyecto artístico.")
             .setSmallIcon(R.mipmap.ic_launcher) // Reemplaza con tu ícono
-            .setContentIntent(pendingIntent)
+            .setContentIntent(pendingIntent) // Acción al tocar la notificación (opcional)
+            .setOngoing(true) // Hace la notificación no descartable (ya lo hace startForeground, pero es bueno ser explícito)
+            .addAction(R.drawable.ic_stop_placeholder, "Detener Monitor", stopServicePendingIntent) // ¡ACCIÓN DE DETENER!
+            // Necesitarás crear un ícono 'ic_stop_placeholder.xml' en tu carpeta res/drawable
+            // (puede ser un simple ícono de stop)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
-        // Lógica de monitoreo
+
+        // Lógica de monitoreo (handler y runnable) como antes
         runnable = Runnable {
             checkForegroundApp()
             handler.postDelayed(runnable, 1000) // Verificar cada segundo
         }
         handler.post(runnable)
 
-        Log.d(TAG, "Servicio iniciado")
-        return START_STICKY // El servicio se reiniciará si el sistema lo mata
+        Log.d(TAG, "Servicio iniciado con notificación y acción de detener.")
+        return START_STICKY
     }
 
     private fun checkForegroundApp() {

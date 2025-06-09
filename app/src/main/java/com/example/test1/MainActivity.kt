@@ -14,94 +14,99 @@ import java.util.TreeMap
 
 class MainActivity : AppCompatActivity() {
 
-    private val MY_PERMISSIONS_REQUEST_PACKAGE_USAGE_STATS = 101
+    // ... (otras propiedades como MY_PERMISSIONS_REQUEST_PACKAGE_USAGE_STATS)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main) // Asumiendo que tienes un layout activity_main.xml
+        setContentView(R.layout.activity_main)
 
+        // Botón de ejemplo para iniciar/detener el monitoreo (opcional)
+        // val toggleButton: Button = findViewById(R.id.toggle_monitoring_button)
+        // toggleButton.setOnClickListener {
+        //     if (isServiceRunning(AppMonitorService::class.java)) { // Necesitarías una función para chequear esto
+        //         stopAppMonitorService()
+        //         toggleButton.text = "Iniciar Monitor"
+        //     } else {
+        //         checkAndStartMonitoring()
+        //     }
+        // }
+
+        // Comprobar y solicitar permisos al inicio, si no se usa un botón
+        checkAndStartMonitoring()
+    }
+
+    // También en checkAndStartMonitoring, si el permiso ya estaba concedido:
+    private fun checkAndStartMonitoring() {
         if (!hasUsageStatsPermission()) {
             requestUsageStatsPermission()
         } else {
-            // Permiso ya concedido, puedes empezar a monitorear
-            startMonitoring()
+            Log.d("MainActivity", "Permiso de UsageStats ya concedido.")
+            startAppMonitorService()
+            // Aquí también cerramos la actividad
+            finish() // Esto cerrará MainActivity si el permiso ya estaba dado al abrir la app
         }
     }
 
-    private fun hasUsageStatsPermission(): Boolean {
-        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            appOps.unsafeCheckOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName
-            )
-        } else {
-            appOps.checkOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName
-            )
-        }
-        return mode == AppOpsManager.MODE_ALLOWED
-    }
-
-    private fun requestUsageStatsPermission() {
-        // Si el permiso no está concedido, lleva al usuario a la pantalla de configuración
-        startActivityForResult(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), MY_PERMISSIONS_REQUEST_PACKAGE_USAGE_STATS)
-    }
+    // hasUsageStatsPermission() y requestUsageStatsPermission() como las tenías
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == MY_PERMISSIONS_REQUEST_PACKAGE_USAGE_STATS) {
             if (hasUsageStatsPermission()) {
-                // Permiso concedido después de que el usuario interactuó con la configuración
-                startMonitoring()
+                Log.d("MainActivity", "Permiso de UsageStats concedido por el usuario.")
+                startAppMonitorService()
+                // Aquí cerramos la actividad después de iniciar el servicio
+                finish() // Esto cerrará MainActivity
             } else {
-                // Permiso no concedido. Podrías mostrar un mensaje al usuario.
-                Log.w("UsageStats", "Usage stats permission not granted.")
+                Log.w("MainActivity", "Permiso de UsageStats no concedido por el usuario.")
+                // Aquí podrías mostrar un diálogo explicando que la app no puede funcionar
+                // y luego quizás también llamar a finish(), o darle otra oportunidad.
+                // Por ejemplo, un Toast y luego cerrar:
+                Toast.makeText(this, "Permiso necesario no concedido. La aplicación se cerrará.", Toast.LENGTH_LONG).show()
+                finish()
             }
         }
     }
 
-    private fun startMonitoring() {
-        // Aquí es donde implementarías la lógica para verificar la app en primer plano
-        // Esto podría ser en un servicio en segundo plano
-        Log.d("UsageStats", "Permission granted. Monitoring can start.")
-        // Por ahora, solo un ejemplo de cómo obtener la app actual
-        getCurrentForegroundApp()
-    }
-
-    // Función de ejemplo para obtener la app en primer plano (simplificada)
-    private fun getCurrentForegroundApp(): String? {
-        if (!hasUsageStatsPermission()) return null
-
-        var currentApp: String? = null
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val time = System.currentTimeMillis()
-        // Consultamos eventos de los últimos 10 segundos, por ejemplo
-        val appList = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 1000 * 10, time)
-        if (appList != null && appList.isNotEmpty()) {
-            val mySortedMap: SortedMap<Long, String> = TreeMap()
-            for (usageStats in appList) {
-                mySortedMap[usageStats.lastTimeUsed] = usageStats.packageName
-            }
-            if (mySortedMap.isNotEmpty()) {
-                currentApp = mySortedMap[mySortedMap.lastKey()]
-                Log.d("ForegroundApp", "Current App: $currentApp")
-            }
-        }
-        return currentApp
-    }
     private fun startAppMonitorService() {
+        Log.d("MainActivity", "Intentando iniciar AppMonitorService.")
+        val serviceIntent = Intent(this, AppMonitorService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(Intent(this, AppMonitorService::class.java))
+            startForegroundService(serviceIntent)
         } else {
-            startService(Intent(this, AppMonitorService::class.java))
+            startService(serviceIntent)
         }
     }
 
     private fun stopAppMonitorService() {
+        Log.d("MainActivity", "Intentando detener AppMonitorService.")
         stopService(Intent(this, AppMonitorService::class.java))
     }
+
+    // La función getCurrentForegroundApp() en MainActivity ahora es opcional.
+    // Podrías mantenerla si quieres, por ejemplo, tener un botón en tu UI que
+    // muestre la app actual en primer plano COMO UNA ACCIÓN PUNTUAL,
+    // pero NO se usaría para el MONITOREO CONTINUO.
+    /*
+    private fun getCurrentForegroundApp(): String? {
+        if (!hasUsageStatsPermission()) {
+            Log.w("UsageStats", "No se puede obtener la app en primer plano: permiso denegado.")
+            return null
+        }
+        // ... (resto de la implementación como la tenías) ...
+        Log.d("ForegroundApp", "Current App (desde MainActivity - llamada puntual): $currentApp")
+        return currentApp
+    }
+    */
+
+    // (Opcional) Función para verificar si el servicio está corriendo
+    // private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+    //     val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    //     for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+    //         if (serviceClass.name == service.service.className) {
+    //             return true
+    //         }
+    //     }
+    //     return false
+    // }
 }
